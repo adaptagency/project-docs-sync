@@ -1,7 +1,11 @@
 #!/bin/bash
 #
-# project-docs-sync.sh — sync <project>/docs/**/*.md|.pdf and root README.md
+# project-docs-sync.sh — sync <project>/{docs,reports}/**/*.md|.pdf and root README.md
 #                        into an Obsidian vault, with live inotify watching.
+#
+# Vault layout:
+#   <project>/docs/<rest>     -> Project Docs/<project>/<rest>        (docs segment dropped — historical)
+#   <project>/reports/<rest>  -> Project Docs/<project>/reports/<rest> (reports segment kept — provenance, no collisions)
 #
 # Usage:
 #   SOURCE=/path/to/projects DEST=/path/to/vault project-docs-sync.sh
@@ -19,25 +23,47 @@ DEST="${DEST:-$HOME/Documents/Obsidian Vault/Project Docs}"
 echo "SOURCE=${SOURCE}"
 echo "DEST=${DEST}"
 
-# Copy eligible files from a docs directory
-sync_docs() {
-    local docsdir="$1"
+# Copy a single eligible file into the vault, preserving <project>/ structure.
+sync_one() {
+    local file="$1"
+    local relative project_path dir_kind rest vault_rel destination
 
-    [ -d "$docsdir" ] || return
+    [ -f "$file" ] || return
+
+    relative="${file#$SOURCE/}"
+
+    if [[ "$relative" =~ ^([^/]+)/(docs|reports)(/.*)?$ ]]; then
+        project_path="${BASH_REMATCH[1]}"
+        dir_kind="${BASH_REMATCH[2]}"
+        rest="${BASH_REMATCH[3]#/}"
+
+        if [[ "$dir_kind" == "reports" ]]; then
+            vault_rel="reports/$rest"
+        else
+            vault_rel="$rest"
+        fi
+    else
+        return
+    fi
+
+    destination="$DEST/$project_path/$(dirname "$vault_rel")"
+    mkdir -p "$destination"
+
+    cp -f "$file" "$destination/$(basename "$vault_rel")"
+
+    echo "$(date '+%Y-%m-%d %H:%M:%S') — copied: $relative"
+}
+
+# Copy eligible files from a sync directory (a <project>/docs or <project>/reports dir)
+sync_tree_dir() {
+    local syncdir="$1"
+
+    [ -d "$syncdir" ] || return
 
     while IFS= read -r -d '' file; do
-        relative="${file#$SOURCE/}"
-        project_path="${relative%%/docs/*}"
-        docs_relative="${relative#*/docs/}"
-
-        destination="$DEST/$project_path/$(dirname "$docs_relative")"
-        mkdir -p "$destination"
-
-        cp -f "$file" "$destination/$(basename "$docs_relative")"
-
-        echo "$(date '+%Y-%m-%d %H:%M:%S') — copied: $relative"
+        sync_one "$file"
     done < <(
-        find "$docsdir" \
+        find "$syncdir" \
             -type f \
             \( -iname '*.md' -o -iname '*.pdf' \) \
             -not -path '*/node_modules/*' \
@@ -65,13 +91,13 @@ sync_readme() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') — copied README: $relative"
 }
 
-# Initial scan: find all existing docs directories
-while IFS= read -r -d '' docsdir; do
-    sync_docs "$docsdir"
+# Initial scan: find all existing docs and reports directories
+while IFS= read -r -d '' syncdir; do
+    sync_tree_dir "$syncdir"
 done < <(
     find "$SOURCE" \
         -type d \
-        -name docs \
+        \( -name docs -o -name reports \) \
         -not -path '*/node_modules/*' \
         -not -path '*/vendor/*' \
         -not -path '*/wp-content/*' \
@@ -80,6 +106,12 @@ done < <(
 
 # Initial scan: find README.md files directly inside project directories
 while IFS= read -r -d '' readme; do
+    # READMEs inside docs/reports dirs are handled by sync_tree_dir above — keep one code path per file.
+    case "$readme" in
+        */docs/*|*/reports/*)
+            continue
+            ;;
+    esac
     projectdir="$(dirname "$readme")"
     sync_readme "$projectdir"
 done < <(
@@ -93,7 +125,7 @@ done < <(
 )
 
 # Watch for changes anywhere under projects.
-# Process files inside docs directories and README.md files in project roots.
+# Process files inside docs/reports directories and README.md files in project roots.
 if command -v inotifywait >/dev/null 2>&1; then
     inotifywait -m -r \
         -e close_write,moved_to \
@@ -107,23 +139,29 @@ if command -v inotifywait >/dev/null 2>&1; then
                 ;;
         esac
 
-        # README.md directly inside a project directory
-        if [[ "$(basename "$file")" == "README.md" ]]; then
+        # Files inside docs/reports dirs are handled generically below.
+        case "$file" in
+            */docs/*|*/reports/*)
+                ;;
+            *)
+                # Outside sync dirs the only other thing we sync is a project-root README.md.
+                if [[ "$(basename "$file")" == "README.md" ]]; then
+                    projectdir="$(dirname "$file")"
 
-            projectdir="$(dirname "$file")"
+                    # Ignore a README inside docs/reports or other nested directories.
+                    case "$projectdir" in
+                        */docs|*/docs/*|*/reports|*/reports/*)
+                            continue
+                            ;;
+                    esac
 
-            # Ignore a README inside docs or other nested directories.
-            case "$projectdir" in
-                */docs|*/docs/*)
-                    continue
-                    ;;
-            esac
+                    sync_readme "$projectdir"
+                fi
+                continue
+                ;;
+        esac
 
-            sync_readme "$projectdir"
-            continue
-        fi
-
-        # Markdown and PDF files inside docs directories
+        # Only markdown and PDF files
         case "$file" in
             *.md|*.MD|*.pdf|*.PDF)
                 ;;
@@ -132,24 +170,7 @@ if command -v inotifywait >/dev/null 2>&1; then
                 ;;
         esac
 
-        case "$file" in
-            */docs/*)
-                ;;
-            *)
-                continue
-                ;;
-        esac
-
-        relative="${file#$SOURCE/}"
-        project_path="${relative%%/docs/*}"
-        docs_relative="${relative#*/docs/}"
-
-        destination="$DEST/$project_path/$(dirname "$docs_relative")"
-        mkdir -p "$destination"
-
-        cp -f "$file" "$destination/$(basename "$docs_relative")"
-
-        echo "$(date '+%Y-%m-%d %H:%M:%S') — copied: $relative"
+        sync_one "$file"
     done
 else
     echo "inotifywait not found — initial sync done. Install inotify-tools for live watch mode."

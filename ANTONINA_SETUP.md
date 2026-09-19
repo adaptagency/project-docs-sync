@@ -1,6 +1,6 @@
 Hi Antonina 👋
 
-Here's a quick setup guide to get your project docs syncing into your Obsidian vault. It's a small script that watches your projects folder and automatically copies any `docs/` files and `README.md` into your vault.
+Here's a quick setup guide to get your project docs syncing into your Obsidian vault. It's a small script that watches your projects folder and automatically copies any `docs/` and `reports/` files plus root `README.md` into your vault.
 
 ## What you'll need
 
