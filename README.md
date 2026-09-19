@@ -8,8 +8,8 @@ This is the script Hal uses for Adapt Agency project documentation (e.g. `~/proj
 
 1. **Initial scan** — walks all `docs/` and `reports/` dirs under `SOURCE`, copies every `.md`/`.pdf` into the vault, preserving structure. Also grabs root-level `README.md` files.
 2. **Watch mode** — uses `inotifywait` to auto-sync on every file save (`close_write`) or move, so the vault stays current without re-running anything.
-3. **Vault layout** — `docs/` content lands directly under `Project Docs/<project>/` (the `docs` segment is dropped); `reports/` content keeps its segment and lands under `Project Docs/<project>/reports/` — so a `reports/README.md` can never clobber the project-root `README.md`.
-4. **Excludes** — `node_modules`, `vendor`, `wp-content`, and anything that isn't `.md`/`.pdf`.
+3. **Vault layout** — `docs/` content lands under `Project Docs/<project>/docs/` and `reports/` content under `Project Docs/<project>/reports/` (both segments are kept, so a `docs/README.md` or `reports/README.md` can never clobber the project-root `README.md`). Nested `repo/docs` dirs keep the same rule.
+4. **Excludes** — `node_modules`, `vendor`, `wp-content`, `.venv`, and anything that isn't `.md`/`.pdf`.
 
 ## Requirements
 
@@ -47,10 +47,11 @@ Obsidian Vault/
 └── Project Docs/
     ├── leadresponse/
     │   ├── README.md
-    │   ├── build-plan.md
-    │   ├── end-to-end-flow.md
-    │   ├── plans/
-    │   │   └── dashboard-auth-implementation-plan.md
+    │   ├── docs/                    ← <project>/docs/ mirrored here
+    │   │   ├── build-plan.md
+    │   │   ├── end-to-end-flow.md
+    │   │   └── plans/
+    │   │       └── dashboard-auth-implementation-plan.md
     │   └── reports/                ← <project>/reports/ mirrored here
     │       └── leadresponse-gap-review-2026-06-30.md
     ├── roktips/

@@ -3,9 +3,9 @@
 # project-docs-sync.sh — sync <project>/{docs,reports}/**/*.md|.pdf and root README.md
 #                        into an Obsidian vault, with live inotify watching.
 #
-# Vault layout:
-#   <project>/docs/<rest>     -> Project Docs/<project>/<rest>        (docs segment dropped — historical)
-#   <project>/reports/<rest>  -> Project Docs/<project>/reports/<rest> (reports segment kept — provenance, no collisions)
+# Vault layout (docs and reports segments are both kept):
+#   <project>/docs/<rest>     -> Project Docs/<project>/docs/<rest>
+#   <project>/reports/<rest>  -> Project Docs/<project>/reports/<rest>
 #
 # Usage:
 #   SOURCE=/path/to/projects DEST=/path/to/vault project-docs-sync.sh
@@ -32,16 +32,15 @@ sync_one() {
 
     relative="${file#$SOURCE/}"
 
-    if [[ "$relative" =~ ^([^/]+)/(docs|reports)(/.*)?$ ]]; then
+    # <project>/docs/<rest>     -> Project Docs/<project>/docs/<rest>     (segment kept)
+    # <project>/reports/<rest>  -> Project Docs/<project>/reports/<rest>  (segment kept)
+    # The split uses the LAST docs|reports segment, so nested dirs like
+    # <project>/repo/docs/... behave the same as root-level ones.
+    if [[ "$relative" =~ ^(.+)/(docs|reports)/(.*)$ ]]; then
         project_path="${BASH_REMATCH[1]}"
         dir_kind="${BASH_REMATCH[2]}"
-        rest="${BASH_REMATCH[3]#/}"
-
-        if [[ "$dir_kind" == "reports" ]]; then
-            vault_rel="reports/$rest"
-        else
-            vault_rel="$rest"
-        fi
+        rest="${BASH_REMATCH[3]}"
+        vault_rel="$dir_kind/$rest"
     else
         return
     fi
@@ -69,6 +68,7 @@ sync_tree_dir() {
             -not -path '*/node_modules/*' \
             -not -path '*/vendor/*' \
             -not -path '*/wp-content/*' \
+            -not -path '*/.venv/*' \
             -print0
     )
 }
@@ -101,6 +101,7 @@ done < <(
         -not -path '*/node_modules/*' \
         -not -path '*/vendor/*' \
         -not -path '*/wp-content/*' \
+        -not -path '*/.venv/*' \
         -print0
 )
 
@@ -121,6 +122,7 @@ done < <(
         -not -path '*/node_modules/*' \
         -not -path '*/vendor/*' \
         -not -path '*/wp-content/*' \
+        -not -path '*/.venv/*' \
         -print0
 )
 
@@ -134,7 +136,7 @@ if command -v inotifywait >/dev/null 2>&1; then
     while read -r file; do
 
         case "$file" in
-            */node_modules/*|*/vendor/*|*/wp-content/*)
+            */node_modules/*|*/vendor/*|*/wp-content/*|*/.venv/*)
                 continue
                 ;;
         esac
